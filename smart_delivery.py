@@ -687,10 +687,52 @@ st.plotly_chart(fig, use_container_width=True)
 # ──────────────────────────────────────────────
 st.markdown('<div class="section-header">🗺 지역 위험도 지도</div>', unsafe_allow_html=True)
 
-m_map = folium.Map(location=[lat, lon], zoom_start=13, tiles="CartoDB dark_matter")
+# 전국 주요 거점 30개
+KEY_LOCATIONS = [
+    (37.4979, 127.0276, "서울 강남"), (37.5700, 126.9796, "서울 종로"),
+    (37.5509, 126.8495, "서울 강서"), (37.6542, 127.0568, "서울 노원"),
+    (37.5034, 126.7660, "경기 부천"), (37.3827, 127.1189, "경기 성남"),
+    (37.2596, 127.0465, "경기 수원"), (37.6583, 126.7706, "경기 고양"),
+    (37.3222, 127.0975, "경기 용인"), (37.6360, 127.2165, "경기 남양주"),
+    (37.4737, 126.6216, "인천"),      (37.8813, 127.7298, "강원 춘천"),
+    (37.7519, 128.8761, "강원 강릉"), (36.6455, 127.4896, "충북 청주"),
+    (36.3554, 127.3836, "대전"),      (36.8151, 127.1139, "충남 천안"),
+    (35.8200, 127.1080, "전북 전주"), (35.9676, 126.7368, "전북 군산"),
+    (35.1517, 126.8891, "광주"),      (34.8118, 126.3922, "전남 목포"),
+    (34.7604, 127.6622, "전남 여수"), (35.8693, 128.5965, "대구"),
+    (36.0319, 129.3652, "경북 포항"), (36.5684, 128.7294, "경북 안동"),
+    (35.5697, 129.3325, "울산"),      (35.1065, 129.0322, "부산 중구"),
+    (35.1796, 129.0756, "부산 해운대"),(35.2393, 128.6935, "경남 창원"),
+    (35.1798, 128.1076, "경남 진주"), (33.4996, 126.5312, "제주"),
+]
+
+@st.cache_data(ttl=600)
+def fetch_nationwide_risk(_lat, _lon, _cur_rain, _cur_wind):
+    import random
+    results = []
+    for glat, glon, gname in KEY_LOCATIONS:
+        dist = ((_lat - glat)**2 + (_lon - glon)**2) ** 0.5
+        decay = max(0.1, 1 - dist * 3)
+        est_rain = max(0, _cur_rain * decay + random.uniform(-0.5, 0.5))
+        est_risk = min(100, int(est_rain * 2.5 + _cur_wind * 0.3 * decay))
+        results.append((glat, glon, gname, est_risk))
+    return results
+
+nationwide = fetch_nationwide_risk(lat, lon, cur_rain, cur_wind)
+
+m_map = folium.Map(location=[36.5, 127.8], zoom_start=7, tiles="CartoDB dark_matter")
+
+for glat, glon, gname, grisk in nationwide:
+    color = "red" if grisk >= 70 else ("orange" if grisk >= 40 else "green")
+    folium.CircleMarker(
+        [glat, glon], radius=7, color=color,
+        fill=True, fill_opacity=0.7,
+        popup=f"<b>{gname}</b><br>추정 리스크: {grisk}/100",
+    ).add_to(m_map)
+
 folium.Marker(
     [lat, lon],
-    popup=f"<b>{selected_location}</b><br>강수: {cur_rain}mm/h<br>수위: {river}m ({river_source})<br>예상시간: {total}분",
+    popup=f"<b>📍 {selected_location}</b><br>강수: {cur_rain}mm/h<br>수위: {river}m ({river_source})<br>리스크: {risk}/100<br>예상시간: {total}분",
     icon=folium.Icon(
         color="red" if risk >= 70 else ("orange" if risk >= 40 else "green"),
         icon="motorcycle", prefix="fa",
@@ -713,7 +755,7 @@ if risk_radius > 0:
     folium.Circle([lat, lon], radius=risk_radius, color="#ff3c78", fill=True,
                   fill_opacity=0.08, popup=f"침수 위험 반경 ~{risk_radius}m").add_to(m_map)
 
-st_folium(m_map, width="100%", height=420, returned_objects=[])
+st_folium(m_map, width="100%", height=500, returned_objects=[])
 
 
 # ──────────────────────────────────────────────
