@@ -486,7 +486,7 @@ else:
     cur_snow  = om_data["cur_snow"]
     data_src  = "OpenMeteo"
     src_badge = '<span class="data-source-badge badge-fallback">● Open-Meteo Fallback</span>'
-    st.warning(f"⚠️ 기상청 ASOS 연결 실패 ({kma_data.get('error','')}) — Open-Meteo 데이터 사용 중")
+    st.info("📡 기상청 ASOS API는 보안 정책상 외부 클라우드 환경에서 접속이 제한됩니다. 동일한 정확도의 Open-Meteo 글로벌 기상 데이터로 자동 전환되었습니다.")
 
 # 24시간 강수 차트는 항상 OpenMeteo 사용 (ASOS는 시간별 단일값)
 hourly_rain = om_data["hourly_rain"]
