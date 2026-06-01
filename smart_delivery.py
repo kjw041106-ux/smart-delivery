@@ -9,7 +9,6 @@
 import streamlit as st
 import requests
 import datetime
-import anthropic
 import folium
 from streamlit_folium import st_folium
 import plotly.graph_objects as go
@@ -17,7 +16,7 @@ import plotly.graph_objects as go
 # ──────────────────────────────────────────────
 # 페이지 설정
 # ──────────────────────────────────────────────
-st.set_page_config(
+st.set_page_config( 
     page_title="스마트 배달 예측 시스템",
     page_icon="🛵",
     layout="wide",
@@ -263,7 +262,7 @@ st.markdown('<div class="sub-title">기상청 ASOS · 수문 · 비즈니스 라
 # ──────────────────────────────────────────────
 st.markdown('<div class="section-header">⚙ 입력 파라미터</div>', unsafe_allow_html=True)
 
-col_a, col_b, col_c, col_d, col_e = st.columns([2, 1.5, 1.2, 1.2, 1.5])
+col_a, col_b, col_c, col_d = st.columns([2, 1.5, 1.2, 1.2])
 
 with col_a:
     search_term = st.text_input("🔍 지역 검색", placeholder="예: 강남, 해운대, 수원...")
@@ -282,9 +281,7 @@ with col_c:
 with col_d:
     delivery_type = st.radio("🛵 배달 방식:", ["단건", "묶음/알뜰"])
 
-with col_e:
-    use_ai_report = st.checkbox("🤖 AI 자연어 리포트", value=True)
-    anthropic_key = st.text_input("Anthropic API Key:", type="password", placeholder="sk-ant-...")
+
 
 # KMA API Key
 try:
@@ -762,30 +759,6 @@ st_folium(m_map, width="100%", height=500, returned_objects=[])
 # Claude AI 리포트
 # ──────────────────────────────────────────────
 st.markdown('<div class="section-header">🤖 AI 종합 분석 리포트</div>', unsafe_allow_html=True)
-
-def generate_ai_report(api_key):
-    context = (
-        f"지역: {selected_location} | 날짜: {selected_date} {selected_hour}시 | 배달방식: {delivery_type}\n"
-        f"데이터소스: {data_src} | 관측소: STN {stn_id}\n"
-        f"현재 강수량: {cur_rain}mm/h | 최고 강수량: {max_rain}mm/h | 풍속: {cur_wind}km/h\n"
-        f"가시거리: {cur_vis}km | 하천수위: {river}m ({river_source}) | 침수예상구역: {flooded}곳\n"
-        f"리스크 인덱스: {risk}/100 | 예상 배달시간: {total}분"
-    )
-    client = anthropic.Anthropic(api_key=api_key)
-    with client.messages.stream(
-        model="claude-sonnet-4-20250514",
-        max_tokens=600,
-        system=(
-            "당신은 배달 플랫폼 실시간 관제 AI입니다. "
-            "기상청 ASOS 실측 데이터 기반으로 라이더와 고객에게 전달할 "
-            "간결하고 실용적인 한국어 분석 리포트를 작성하세요. "
-            "이모지를 적절히 활용하고, 3개 섹션으로 구성하세요: "
-            "① 현재 상황 요약 ② 라이더 안전 권고사항 ③ 고객 안내 메시지. "
-            "전체 400자 이내로 작성하세요."
-        ),
-        messages=[{"role": "user", "content": f"다음 데이터로 리포트를 작성해주세요:\n{context}"}],
-    ) as stream:
-        return stream.get_final_text()
 
 # 규칙 기반 자동 리포트 (API 키 불필요)
 if risk >= 70:
