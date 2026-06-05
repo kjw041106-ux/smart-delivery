@@ -1,4 +1,4 @@
-"""
+    """
 🛵 스마트 배달 예측 시스템
 - 기상청 ASOS 실시간 API 연동 (apihub.kma.go.kr)
 - WAMIS 하천수위 버그 수정 (비정상값 필터링)
@@ -372,8 +372,9 @@ def fetch_kma_asos(stn_id: int, target_date: datetime.date, target_hour: int, ap
 # ✅ 버그수정: 캐시는 날짜/지역 단위로만, 시간별 값은 캐시 밖에서 슬라이싱
 # ──────────────────────────────────────────────
 @st.cache_data(ttl=86400)  # 날짜+지역 단위 캐싱 (24시간) — 시간 슬라이더 바꿔도 차트 동일
-def fetch_openmeteo_daily(lat, lon, target_date, is_past: bool):
-    """하루치 24시간 데이터를 통째로 캐싱 — is_past를 밖에서 고정해서 전달"""
+def fetch_openmeteo_daily(lat, lon, target_date):
+    """하루치 24시간 데이터를 통째로 캐싱"""
+    is_past = target_date < datetime.date.today()
     base_url = (
         "https://archive-api.open-meteo.com/v1/archive"
         if is_past else
@@ -403,8 +404,7 @@ def fetch_openmeteo_daily(lat, lon, target_date, is_past: bool):
 
 def fetch_openmeteo(lat, lon, target_date, target_hour):
     """시간별 슬라이싱 — 캐시된 일별 데이터에서 뽑아씀"""
-    is_past = target_date < datetime.date.today()
-    daily = fetch_openmeteo_daily(lat, lon, target_date, is_past)
+    daily = fetch_openmeteo_daily(lat, lon, target_date)
     precip = daily["precip"]
     wind   = daily["wind"]
     vis    = daily["vis"]
@@ -483,8 +483,7 @@ lat, lon = loc_data[0], loc_data[1]
 stn_id   = loc_data[2]
 
 # cache_data(key=lat,lon,date)로 고정 → 슬라이더 바꿔도 차트 불변
-is_past = selected_date < datetime.date.today()
-om_daily = fetch_openmeteo_daily(lat, lon, selected_date, is_past)
+om_daily = fetch_openmeteo_daily(lat, lon, selected_date)
 
 with st.spinner("🌐 기상청 ASOS 실시간 데이터 수집 중..."):
     kma_data  = fetch_kma_asos(stn_id, selected_date, selected_hour, KMA_KEY)
