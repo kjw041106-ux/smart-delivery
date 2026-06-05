@@ -371,61 +371,29 @@ def fetch_kma_asos(stn_id: int, target_date: datetime.date, target_hour: int, ap
 # Open-Meteo fallback (24시간 강수 차트용 포함)
 # ✅ 버그수정: 캐시는 날짜/지역 단위로만, 시간별 값은 캐시 밖에서 슬라이싱
 # ──────────────────────────────────────────────
-@st.cache_data(ttl=3600)  # 캐시 key = (lat, lon, target_date) 만으로 고정
-def fetch_openmeteo_daily(lat, lon, target_date):
-    """하루치 24시간 데이터를 통째로 캐싱 — 시간 슬라이더와 무관하게 차트 고정"""
-    is_past = target_date < datetime.date.today() - datetime.timedelta(days=1)
-    if is_past:
-        # 이틀 이전 과거 데이터: archive API 사용
-        base_url = "https://archive-api.open-meteo.com/v1/archive"
-        params = {
-            "latitude": lat, "longitude": lon,
-            "start_date": str(target_date), "end_date": str(target_date),
-            "hourly": "precipitation,windspeed_10m,visibility,snowfall",
-            "timezone": "Asia/Seoul",
-        }
-    else:
-        # 오늘/내일: forecast API + past_hours=24 로 오늘 00시~현재까지 실측 포함
-        base_url = "https://api.open-meteo.com/v1/forecast"
-        params = {
-            "latitude": lat, "longitude": lon,
-            "start_date": str(target_date), "end_date": str(target_date),
-            "hourly": "precipitation,windspeed_10m,visibility,snowfall",
-            "timezone": "Asia/Seoul",
-            "past_hours": 24,   # ✅ 핵심 수정: 과거 24시간 실측값도 함께 반환
-        }
+@st.cache_data(ttl=86400)  # 날짜+지역 단위 캐싱 (24시간) — 시간 슬라이더 바꿔도 차트 동일
+def fetch_openmeteo_daily(lat, lon, target_date, is_past: bool):
+    """하루치 24시간 데이터를 통째로 캐싱 — is_past를 밖에서 고정해서 전달"""
+    base_url = (
+        "https://archive-api.open-meteo.com/v1/archive"
+        if is_past else
+        "https://api.open-meteo.com/v1/forecast"
+    )
+    params = {
+        "latitude": lat, "longitude": lon,
+        "start_date": str(target_date), "end_date": str(target_date),
+        "hourly": "precipitation,windspeed_10m,visibility,snowfall",
+        "timezone": "Asia/Seoul",
+    }
     try:
         r = requests.get(base_url, params=params, timeout=8)
         r.raise_for_status()
-        hourly_data = r.json()["hourly"]
-
-        # time 배열 기준으로 target_date의 00~23시 정확히 슬라이싱
-        times  = hourly_data.get("time", [])
-        date_str = str(target_date)
-        # target_date에 해당하는 인덱스만 추출
-        indices = [i for i, t in enumerate(times) if t.startswith(date_str)]
-
-        def extract(key, default, length=24):
-            raw = hourly_data.get(key, [default] * length)
-            return [raw[i] if i < len(raw) and raw[i] is not None else default for i in indices] \
-                   if indices else [default] * 24
-
-        precip = extract("precipitation",  0.0)
-        wind   = extract("windspeed_10m",  0.0)
-        vis    = extract("visibility",     10000)
-        snow   = extract("snowfall",       0.0)
-
-        # 24시간이 안 채워지면 0으로 패딩
-        def pad24(lst, default):
-            return (lst + [default] * 24)[:24]
-
-        return {
-            "precip": pad24(precip, 0.0),
-            "wind":   pad24(wind,   0.0),
-            "vis":    pad24(vis,    10000),
-            "snow":   pad24(snow,   0.0),
-            "source": "OpenMeteo",
-        }
+        data = r.json()["hourly"]
+        precip = [v if v is not None else 0.0 for v in data["precipitation"]]
+        wind   = [v if v is not None else 0.0 for v in data.get("windspeed_10m", [0.0]*24)]
+        vis    = [v if v is not None else 10000 for v in data.get("visibility",   [10000]*24)]
+        snow   = [v if v is not None else 0.0 for v in data.get("snowfall",       [0.0]*24)]
+        return {"precip": precip, "wind": wind, "vis": vis, "snow": snow, "source": "OpenMeteo"}
     except Exception as e:
         return {
             "precip": [0.0]*24, "wind": [0.0]*24,
@@ -435,7 +403,8 @@ def fetch_openmeteo_daily(lat, lon, target_date):
 
 def fetch_openmeteo(lat, lon, target_date, target_hour):
     """시간별 슬라이싱 — 캐시된 일별 데이터에서 뽑아씀"""
-    daily = fetch_openmeteo_daily(lat, lon, target_date)
+    is_past = target_date < datetime.date.today()
+    daily = fetch_openmeteo_daily(lat, lon, target_date, is_past)
     precip = daily["precip"]
     wind   = daily["wind"]
     vis    = daily["vis"]
@@ -513,10 +482,12 @@ loc_data = LOCATIONS[selected_location]
 lat, lon = loc_data[0], loc_data[1]
 stn_id   = loc_data[2]
 
-# 날짜+지역이 바뀔 때만 OpenMeteo 재호출, 시간 슬라이더 변경엔 캐시 재사용
+# ✅ session_state로 날짜+지역이 바뀔 때만 OpenMeteo 재호출
+# 시간 슬라이더 변경 시에는 기존 데이터 재사용 → 차트 고정
 _om_key = f"{lat}_{lon}_{selected_date}"
 if st.session_state.get("om_key") != _om_key:
-    st.session_state["om_daily"] = fetch_openmeteo_daily(lat, lon, selected_date)
+    is_past = selected_date < datetime.date.today() - datetime.timedelta(days=1)
+    st.session_state["om_daily"] = fetch_openmeteo_daily(lat, lon, selected_date, is_past)
     st.session_state["om_key"] = _om_key
 om_daily = st.session_state["om_daily"]
 
