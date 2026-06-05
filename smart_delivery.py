@@ -371,7 +371,7 @@ def fetch_kma_asos(stn_id: int, target_date: datetime.date, target_hour: int, ap
 # Open-Meteo fallback (24시간 강수 차트용 포함)
 # ✅ 버그수정: 캐시는 날짜/지역 단위로만, 시간별 값은 캐시 밖에서 슬라이싱
 # ──────────────────────────────────────────────
-@st.cache_data(ttl=1800)  # 날짜+지역 단위 캐싱 (30분) — 시간 슬라이더 바꿔도 차트 동일
+@st.cache_data(ttl=86400)  # 날짜+지역 단위 캐싱 (24시간) — 시간 슬라이더 바꿔도 차트 동일
 def fetch_openmeteo_daily(lat, lon, target_date, is_past: bool):
     """하루치 24시간 데이터를 통째로 캐싱 — is_past를 밖에서 고정해서 전달"""
     base_url = (
@@ -482,10 +482,24 @@ loc_data = LOCATIONS[selected_location]
 lat, lon = loc_data[0], loc_data[1]
 stn_id   = loc_data[2]
 
+# OpenMeteo는 날짜+지역 단위로만 호출 (시간 슬라이더와 무관하게 캐시 유지)
+is_past = selected_date < datetime.date.today() - datetime.timedelta(days=1)
+om_daily = fetch_openmeteo_daily(lat, lon, selected_date, is_past)
+
 with st.spinner("🌐 기상청 ASOS 실시간 데이터 수집 중..."):
     kma_data  = fetch_kma_asos(stn_id, selected_date, selected_hour, KMA_KEY)
-    om_data   = fetch_openmeteo(lat, lon, selected_date, selected_hour)
-    river, river_source = fetch_river_level(lat, lon, om_data["cur_rain"], selected_date, selected_hour, selected_location)
+    river, river_source = fetch_river_level(lat, lon, om_daily["precip"][selected_hour], selected_date, selected_hour, selected_location)
+
+# OpenMeteo 시간별 슬라이싱 (캐시된 daily 데이터에서)
+om_data = {
+    "hourly_rain": om_daily["precip"],
+    "max_rain":    round(max(om_daily["precip"]), 1),
+    "cur_rain":    round(om_daily["precip"][selected_hour], 2),
+    "cur_wind":    round(om_daily["wind"][selected_hour], 1),
+    "cur_vis":     round(om_daily["vis"][selected_hour] / 1000, 1),
+    "cur_snow":    round(om_daily["snow"][selected_hour], 1),
+    "source":      om_daily["source"],
+}
 
 # 데이터 소스 결정: KMA 성공 시 우선 사용, 실패 시 OpenMeteo fallback
 if kma_data.get("source") == "KMA_ASOS":
