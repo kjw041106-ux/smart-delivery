@@ -1,4 +1,4 @@
-    """
+"""
 🛵 스마트 배달 예측 시스템
 - 기상청 ASOS 실시간 API 연동 (apihub.kma.go.kr)
 - WAMIS 하천수위 버그 수정 (비정상값 필터링)
@@ -371,10 +371,9 @@ def fetch_kma_asos(stn_id: int, target_date: datetime.date, target_hour: int, ap
 # Open-Meteo fallback (24시간 강수 차트용 포함)
 # ✅ 버그수정: 캐시는 날짜/지역 단위로만, 시간별 값은 캐시 밖에서 슬라이싱
 # ──────────────────────────────────────────────
-@st.cache_data(ttl=86400)  # 날짜+지역 단위 캐싱 (24시간) — 시간 슬라이더 바꿔도 차트 동일
-def fetch_openmeteo_daily(lat, lon, target_date):
-    """하루치 24시간 데이터를 통째로 캐싱"""
-    is_past = target_date < datetime.date.today()
+@st.cache_data(ttl=None)   # 만료 없음 — 슬라이더 바꿔도 절대 재호출 안 함
+def fetch_openmeteo_daily(lat, lon, target_date, is_past: bool):
+    """하루치 24시간 데이터를 통째로 캐싱 — is_past를 밖에서 고정해서 전달"""
     base_url = (
         "https://archive-api.open-meteo.com/v1/archive"
         if is_past else
@@ -404,7 +403,8 @@ def fetch_openmeteo_daily(lat, lon, target_date):
 
 def fetch_openmeteo(lat, lon, target_date, target_hour):
     """시간별 슬라이싱 — 캐시된 일별 데이터에서 뽑아씀"""
-    daily = fetch_openmeteo_daily(lat, lon, target_date)
+    is_past = target_date < datetime.date.today()
+    daily = fetch_openmeteo_daily(lat, lon, target_date, is_past)
     precip = daily["precip"]
     wind   = daily["wind"]
     vis    = daily["vis"]
@@ -482,8 +482,14 @@ loc_data = LOCATIONS[selected_location]
 lat, lon = loc_data[0], loc_data[1]
 stn_id   = loc_data[2]
 
-# cache_data(key=lat,lon,date)로 고정 → 슬라이더 바꿔도 차트 불변
-om_daily = fetch_openmeteo_daily(lat, lon, selected_date)
+# ✅ session_state로 날짜+지역이 바뀔 때만 OpenMeteo 재호출
+# 시간 슬라이더 변경 시에는 기존 데이터 재사용 → 차트 고정
+_om_key = f"{lat}_{lon}_{selected_date}"
+if st.session_state.get("om_key") != _om_key:
+    is_past = selected_date < datetime.date.today() - datetime.timedelta(days=1)
+    st.session_state["om_daily"] = fetch_openmeteo_daily(lat, lon, selected_date, is_past)
+    st.session_state["om_key"] = _om_key
+om_daily = st.session_state["om_daily"]
 
 with st.spinner("🌐 기상청 ASOS 실시간 데이터 수집 중..."):
     kma_data  = fetch_kma_asos(stn_id, selected_date, selected_hour, KMA_KEY)
