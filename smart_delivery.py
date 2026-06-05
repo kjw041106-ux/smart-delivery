@@ -384,7 +384,6 @@ def fetch_openmeteo_daily(lat, lon, target_date, is_past: bool):
         "start_date": str(target_date), "end_date": str(target_date),
         "hourly": "precipitation,windspeed_10m,visibility,snowfall",
         "timezone": "Asia/Seoul",
-        "past_days": 7,
     }
     try:
         r = requests.get(base_url, params=params, timeout=8)
@@ -487,7 +486,7 @@ stn_id   = loc_data[2]
 # 시간 슬라이더 변경 시에는 기존 데이터 재사용 → 차트 고정
 _om_key = f"{lat}_{lon}_{selected_date}"
 if st.session_state.get("om_key") != _om_key:
-    is_past = selected_date < datetime.date.today() - datetime.timedelta(days=1)
+    is_past = selected_date < datetime.date.today()
     st.session_state["om_daily"] = fetch_openmeteo_daily(lat, lon, selected_date, is_past)
     st.session_state["om_key"] = _om_key
 om_daily = st.session_state["om_daily"]
