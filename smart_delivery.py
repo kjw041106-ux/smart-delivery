@@ -293,12 +293,16 @@ except Exception:
 # ──────────────────────────────────────────────
 # 기상청 ASOS 실시간 API
 # ──────────────────────────────────────────────
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=0)  # 실시간 반영 필수 — 캐싱 비활성화
 def fetch_kma_asos(stn_id: int, target_date: datetime.date, target_hour: int, api_key: str):
     """
     기상청 apihub ASOS 시간자료 API
     https://apihub.kma.go.kr/api/typ01/url/kma_sfctm2.php
     """
+    # 과거 날짜(어제 이전)는 ASOS 미지원 → OpenMeteo로 자동 fallback
+    if target_date < datetime.date.today() - datetime.timedelta(days=1):
+        return {"source": "FAILED", "error": "과거 데이터는 ASOS 미지원 — OpenMeteo 사용"}
+
     tm_str = target_date.strftime("%Y%m%d") + f"{target_hour:02d}00"
     url = "https://apihub.kma.go.kr/api/typ01/url/kma_sfctm2.php"
     params = {
@@ -366,7 +370,7 @@ def fetch_kma_asos(stn_id: int, target_date: datetime.date, target_hour: int, ap
 # Open-Meteo fallback (24시간 강수 차트용 포함)
 # ✅ 버그수정: 캐시는 날짜/지역 단위로만, 시간별 값은 캐시 밖에서 슬라이싱
 # ──────────────────────────────────────────────
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=0)  # 실시간 반영 필수 — 캐싱 비활성화
 def fetch_openmeteo_daily(lat, lon, target_date, is_past: bool):
     """하루치 24시간 데이터를 통째로 캐싱 — is_past를 밖에서 고정해서 전달"""
     base_url = (
