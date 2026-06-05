@@ -482,14 +482,9 @@ loc_data = LOCATIONS[selected_location]
 lat, lon = loc_data[0], loc_data[1]
 stn_id   = loc_data[2]
 
-# ✅ session_state로 날짜+지역이 바뀔 때만 OpenMeteo 재호출
-# 시간 슬라이더 변경 시에는 기존 데이터 재사용 → 차트 고정
-_om_key = f"{lat}_{lon}_{selected_date}"
-if st.session_state.get("om_key") != _om_key:
-    is_past = selected_date < datetime.date.today() - datetime.timedelta(days=1)
-    st.session_state["om_daily"] = fetch_openmeteo_daily(lat, lon, selected_date, is_past)
-    st.session_state["om_key"] = _om_key
-om_daily = st.session_state["om_daily"]
+# @st.cache_data 캐시 key=(lat,lon,date)로 고정 → 슬라이더 바꿔도 차트 불변
+is_past = selected_date < datetime.date.today() - datetime.timedelta(days=1)
+om_daily = fetch_openmeteo_daily(lat, lon, selected_date, is_past)
 
 with st.spinner("🌐 기상청 ASOS 실시간 데이터 수집 중..."):
     kma_data  = fetch_kma_asos(stn_id, selected_date, selected_hour, KMA_KEY)
